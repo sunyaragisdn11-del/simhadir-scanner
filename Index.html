@@ -1,0 +1,292 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102b50">
+  <title>SIMHADIR | Scanner QR</title>
+
+  <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px 16px;
+      min-height: 100vh;
+      background: #f1f5f9;
+      color: #102b50;
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 480px;
+      background: white;
+      padding: 24px;
+      border-radius: 20px;
+      box-shadow: 0 12px 40px rgba(16,43,80,.10);
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 22px;
+    }
+
+    .logo {
+      width: 58px;
+      height: 58px;
+      margin: auto;
+      border-radius: 16px;
+      background: #102b50;
+      color: white;
+      display: grid;
+      place-items: center;
+      font-size: 27px;
+      font-weight: bold;
+    }
+
+    h2 {
+      margin: 14px 0 5px;
+      font-size: 22px;
+    }
+
+    .subtitle {
+      color: #64748b;
+      font-size: 13px;
+    }
+
+    #kameraQR {
+      width: 100%;
+      overflow: hidden;
+      border-radius: 14px;
+      background: #0f172a;
+    }
+
+    #status {
+      margin: 16px 0;
+      padding: 13px;
+      border-radius: 10px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      text-align: center;
+      font-size: 13px;
+    }
+
+    #status.error {
+      background: #fef2f2;
+      color: #b91c1c;
+    }
+
+    #status.success {
+      background: #f0fdf4;
+      color: #15803d;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    button {
+      flex: 1;
+      border: 0;
+      border-radius: 10px;
+      padding: 14px 10px;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    #btnMulai {
+      background: #2563eb;
+      color: white;
+    }
+
+    #btnBerhenti {
+      background: #e2e8f0;
+      color: #334155;
+    }
+
+    button:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+    }
+
+    .footer {
+      margin-top: 20px;
+      text-align: center;
+      color: #94a3b8;
+      font-size: 11px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <main class="container">
+
+    <header class="header">
+      <div class="logo">S</div>
+      <h2>SIMHADIR Scanner</h2>
+      <div class="subtitle">SDN Sunyaragi 1 Kota Cirebon</div>
+    </header>
+
+    <div id="kameraQR"></div>
+
+    <div id="status">
+      Tekan Mulai Scan untuk mengaktifkan kamera.
+    </div>
+
+    <div class="actions">
+      <button id="btnMulai" onclick="mulaiScan()">
+        Mulai Scan
+      </button>
+
+      <button id="btnBerhenti" onclick="berhentiScan()" disabled>
+        Berhenti
+      </button>
+    </div>
+
+    <div class="footer">
+      SIMHADIR · Sistem Informasi Kehadiran Siswa
+    </div>
+
+  </main>
+
+<script>
+  let scanner = null;
+  let scannerAktif = false;
+  let sedangMemproses = false;
+
+  const statusEl = document.getElementById('status');
+  const btnMulai = document.getElementById('btnMulai');
+  const btnBerhenti = document.getElementById('btnBerhenti');
+
+  function tampilkanStatus(pesan, jenis = '') {
+    statusEl.textContent = pesan;
+    statusEl.className = jenis;
+  }
+
+  async function mulaiScan() {
+    if (scannerAktif || sedangMemproses) return;
+
+    if (typeof Html5Qrcode === 'undefined') {
+      tampilkanStatus('Library scanner gagal dimuat. Periksa koneksi internet.', 'error');
+      return;
+    }
+
+    try {
+      tampilkanStatus('Meminta izin kamera...');
+
+      scanner = new Html5Qrcode('kameraQR');
+
+      await scanner.start(
+        { facingMode: 'environment' },
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1
+        },
+        hasilScan,
+        function() {}
+      );
+
+      scannerAktif = true;
+      btnMulai.disabled = true;
+      btnBerhenti.disabled = false;
+
+      tampilkanStatus('Kamera aktif. Arahkan ke QR Code siswa.');
+
+    } catch (error) {
+      scanner = null;
+      scannerAktif = false;
+
+      tampilkanStatus(
+        'Kamera gagal dibuka: ' + (error.message || error),
+        'error'
+      );
+    }
+  }
+
+  async function hasilScan(teksQR) {
+    if (sedangMemproses) return;
+
+    sedangMemproses = true;
+
+    const qrToken = String(teksQR || '').trim();
+
+    // Token siswa menggunakan format UUID.
+    const polaUUID =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    if (!polaUUID.test(qrToken)) {
+      sedangMemproses = false;
+      tampilkanStatus('QR tidak sesuai format token siswa SIMHADIR.', 'error');
+      return;
+    }
+
+    try {
+      await berhentiScanInternal();
+
+      if (!window.opener || window.opener.closed) {
+        tampilkanStatus(
+          'Halaman SIMHADIR utama tidak ditemukan. Buka scanner dari aplikasi SIMHADIR.',
+          'error'
+        );
+        sedangMemproses = false;
+        return;
+      }
+
+      window.opener.postMessage({
+        type: 'SIMHADIR_QR_RESULT',
+        qrToken: qrToken
+      }, '*');
+
+      tampilkanStatus(
+        'QR berhasil dibaca. Mengirim hasil ke SIMHADIR...',
+        'success'
+      );
+
+    } catch (error) {
+      tampilkanStatus(
+        'Gagal memproses QR: ' + (error.message || error),
+        'error'
+      );
+      sedangMemproses = false;
+    }
+  }
+
+  async function berhentiScanInternal() {
+    if (scanner && scannerAktif) {
+      await scanner.stop();
+      await scanner.clear();
+    }
+
+    scanner = null;
+    scannerAktif = false;
+
+    btnMulai.disabled = false;
+    btnBerhenti.disabled = true;
+  }
+
+  async function berhentiScan() {
+    try {
+      await berhentiScanInternal();
+      sedangMemproses = false;
+      tampilkanStatus('Kamera dihentikan.');
+    } catch (error) {
+      tampilkanStatus('Gagal menghentikan kamera.', 'error');
+    }
+  }
+</script>
+
+</body>
+</html>
